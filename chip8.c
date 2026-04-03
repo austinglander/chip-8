@@ -1,11 +1,5 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <SDL2/SDL.h>
-
-#include <time.h>
-#define NANOS_PER_MILLI 1000000L
+#include <SDL2/SDL_mixer.h>
 
 // This interpreter was written primarily using Cowgod's reference
 // Several references are made to sections of Cowgod's document throughout this program
@@ -14,7 +8,7 @@
 // Behavior was honed in after implementing Cowgod's instructions by using this test suite:
 // https://github.com/Timendus/chip8-test-suite?tab=readme-ov-file
 
-#define INSTRUCTIONS_PER_FRAME 10
+#define INSTRUCTIONS_PER_FRAME 500
 #define DISPLAY_WIDTH 64
 #define DISPLAY_HEIGHT 32
 #define SCALE_FACTOR 16
@@ -176,7 +170,9 @@ typedef struct
     uint8_t SP;
     uint16_t stack[16];
     uint8_t keyboard[16]; // 2.3
+    uint8_t previous_keyboard[16]; // Fx0A
     uint8_t display[DISPLAY_WIDTH][DISPLAY_HEIGHT]; // 2.4 (column major)
+    
 } chip8;
 
 chip8 C8 = {0};
@@ -195,6 +191,7 @@ void execute_instruction() {
     uint8_t y = (opcode & 0x00F0) >> 4;
     uint8_t kk = opcode & 0x00FF;
     uint8_t tmp;
+    uint8_t previous_keyboard[16];
     // printf("Executing instruction 0x%04X from location 0x%03X; nnn=0x%03X, nibble=%d, x=%d, y=%d, kk=%d\n", opcode, C8.PC, nnn, nibble, x, y, kk);
     C8.PC += 2;
 
@@ -306,17 +303,20 @@ void execute_instruction() {
             C8.V[x] = (rand() % 256) & kk;
             break;
         case 0xD000: // DRW Vx, Vy, nibble
-        // TODO: Fix some bug in here causing clipping test to fail
             // Draws sprites left to right, top to bottom
             uint8_t draw_buffer[16];
             memcpy(draw_buffer, &C8.memory[C8.I], nibble);
+            uint8_t x_offset = C8.V[x] % DISPLAY_WIDTH;
+            uint8_t y_offset = C8.V[y] % DISPLAY_HEIGHT;
+            C8.V[0xF] = 0;
             for (int row = 0; row < nibble; row++) {
                 for (int column = 0; column < 8; column++) { // All sprites are 8 bits wide
+                    // Skip drawing this sprite if it's off screen
+                    if (x_offset + column >= DISPLAY_WIDTH || y_offset + row >= DISPLAY_HEIGHT) continue;
                     uint8_t sprite_bit = (draw_buffer[row] >> (7 - column)) & 1;
-                    uint8_t* write_location = &C8.display[(C8.V[x] + column) % DISPLAY_WIDTH][(C8.V[y] + row) % DISPLAY_HEIGHT];
+                    uint8_t* write_location = &C8.display[x_offset + column][y_offset + row];
                     // If both the sprite bit and existing bit here are on (1), set VF to 1
                     if (*write_location == 1 && sprite_bit == 1) C8.V[0xF] = 1;
-                    else C8.V[0xF] = 0;
                     *write_location ^= sprite_bit;
                 }
             }
@@ -348,16 +348,16 @@ void execute_instruction() {
                     C8.V[x] = C8.delay_timer;
                     break;
                 case 0x0A: // LD Vx, K
-                    uint8_t key_pressed = 0;
+                    uint8_t key_released = 0;
                     for (int i = 0; i < 16; i++) {
-                        if (C8.keyboard[i] == 1) {
+                        if (C8.keyboard[i] == 0 && C8.previous_keyboard[i] == 1) { // key released between frames
                             C8.V[x] = i;
-                            key_pressed = 1;
+                            key_released = 1;
                             break;
                         }
                     }
-                    // If no key press was detected, re-run this instruction
-                    if (!key_pressed) C8.PC -= 2;
+                    // If no key release was detected, re-run this instruction
+                    if (!key_released) C8.PC -= 2;
                     break;
                 case 0x15: // LD DT, Vx
                     C8.delay_timer = C8.V[x];
@@ -429,12 +429,12 @@ void execute_instruction() {
                     C8.memory[C8.I+2] = C8.V[x] % 10;
                     break;
                 case 0x55: // LD [I], Vx
-                    // TODO: Consider adding toggle for code that increments I here as well
                     memcpy(&C8.memory[C8.I], C8.V, x + 1); // x = n -> copy n + 1 regs to mem
+                    C8.I += x + 1;
                     break;
                 case 0x65: // LD Vx, [I]
-                    // TODO: Consider adding toggle for code that increments I here as well
                     memcpy(C8.V, &C8.memory[C8.I], x + 1); // x = n -> copy mem into n + 1 regs
+                    C8.I += x + 1;
                     break;
                 default:
                     printf("Attempted to execute unknown instruction %04X\n", opcode);
@@ -525,6 +525,8 @@ int map_sdl_to_chip8(SDL_Keycode key) {
 }
 
 int poll_input() {
+    // Save previous keyboard state for accurate execution of Fx0A instruction
+    memcpy(C8.previous_keyboard, C8.keyboard, 16);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         int key_index;
@@ -548,6 +550,13 @@ int poll_input() {
     return 0;
 }
 
+int play_beep(Mix_Chunk* sound) {
+    return Mix_FadeInChannel(-1, sound, -1, 30); // short fade in to reduce popping
+}
+void stop_beep(int channelID) {
+    Mix_FadeOutChannel(channelID, 30); // short fade out to reduce popping
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) {
         printf("Usage: %s filename\n", argv[0]);
@@ -568,7 +577,7 @@ int main(int argc, char** argv) {
     C8.PC = 0x200;
 
     // Init rendering engine
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO || SDL_INIT_AUDIO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
         return 1;
     }
@@ -583,14 +592,34 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Init sound engine
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 1, 2048) < 0) {
+        printf("Audio mixer could not be created! Mixer Error: %s\n", Mix_GetError());
+        SDL_Quit();
+        return 1;
+    }
+
+    Mix_Chunk* sound = Mix_LoadWAV("beep.wav");
+    if (!sound) {
+        printf("Could not load beep.wav! Mixer Error: %s\n", Mix_GetError());
+        SDL_Quit();
+        return 1;
+    }
+
     uint8_t running = 1;
+    int audio_channel_id = 0;
     while (running) {
         // Execute instructions
         for (int i = 0; i < INSTRUCTIONS_PER_FRAME; i++) {
             execute_instruction();
         }
 
-        // TODO: play sound
+        // Play sound
+        if (C8.sound_timer > 0) {
+            audio_channel_id = play_beep(sound);
+        } else {
+            stop_beep(audio_channel_id);
+        }
 
         // Update timers (2.5)
         if (C8.delay_timer > 0) C8.delay_timer--;
