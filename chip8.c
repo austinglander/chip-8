@@ -11,6 +11,9 @@
 // Several references are made to sections of Cowgod's document throughout this program
 // You can find one mirror here: http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#2.1
 
+// Behavior was honed in after implementing Cowgod's instructions by using this test suite:
+// https://github.com/Timendus/chip8-test-suite?tab=readme-ov-file
+
 #define INSTRUCTIONS_PER_FRAME 10
 #define DISPLAY_WIDTH 64
 #define DISPLAY_HEIGHT 32
@@ -180,10 +183,10 @@ chip8 C8 = {0};
 
 void execute_instruction() {
     // 3.0
-    if (C8.PC % 2 != 0) {
-        printf("Failed to execute instruction at 0x%03X; misaligned PC\n", C8.PC);
-        exit(1);
-    }
+    // if (C8.PC % 2 != 0) {
+    //     printf("Failed to execute instruction at 0x%03X; misaligned PC\n", C8.PC);
+    //     exit(1);
+    // }
 
     uint16_t opcode = (C8.memory[C8.PC] << 8) + (C8.memory[C8.PC + 1]);
     uint16_t nnn = opcode & 0x0FFF;
@@ -191,6 +194,7 @@ void execute_instruction() {
     uint8_t x = (opcode & 0x0F00) >> 8;
     uint8_t y = (opcode & 0x00F0) >> 4;
     uint8_t kk = opcode & 0x00FF;
+    uint8_t tmp;
     // printf("Executing instruction 0x%04X from location 0x%03X; nnn=0x%03X, nibble=%d, x=%d, y=%d, kk=%d\n", opcode, C8.PC, nnn, nibble, x, y, kk);
     C8.PC += 2;
 
@@ -205,7 +209,7 @@ void execute_instruction() {
                     C8.PC = C8.stack[--C8.SP];
                     break;
                 default:
-                    printf("Attempted to execute unknown instruction %04X", opcode);
+                    printf("Attempted to execute unknown instruction %04X\n", opcode);
                     exit(1);
                     break;
             }
@@ -226,7 +230,7 @@ void execute_instruction() {
             break;
         case 0x5000: // SE Vx, Vy
             if (opcode & 0x000F != 0) {
-                printf("Attempted to execute unknown instruction %04X", opcode);
+                printf("Attempted to execute unknown instruction %04X\n", opcode);
                 exit(1);
             }
             if (C8.V[x] == C8.V[y]) C8.PC += 2;
@@ -244,42 +248,50 @@ void execute_instruction() {
                     break;
                 case 1: // OR Vx, Vy
                     C8.V[x] |= C8.V[y];
+                    C8.V[0xF] = 0;
                     break;
                 case 2: // AND Vx, Vy
                     C8.V[x] &= C8.V[y];
+                    C8.V[0xF] = 0;
                     break;
                 case 3: // XOR Vx, Vy
                     C8.V[x] ^= C8.V[y];
+                    C8.V[0xF] = 0;
                     break;
                 case 4: // ADD Vx, Vy
-                    if ((uint16_t)C8.V[x] + C8.V[y] > 255) C8.V[0xF] = 1;
-                    else C8.V[0xF] = 0;
+                    if ((uint16_t)C8.V[x] + C8.V[y] > 255) tmp = 1;
+                    else tmp = 0;
                     C8.V[x] += C8.V[y];
+                    C8.V[0xF] = tmp; // take care to write VF AFTER the operation
                     break;
                 case 5: // SUB Vx, Vy
-                    if (C8.V[x] > C8.V[y]) C8.V[0xF] = 1; // TODO: understand why this is > and not >=
-                    else C8.V[0xF] = 0;
+                    if (C8.V[x] >= C8.V[y]) tmp = 1; // Cowgod's guide incorrectly states this should be > and not >=
+                    else tmp = 0;
                     C8.V[x] -= C8.V[y];
+                    C8.V[0xF] = tmp;
                     break;
                 case 6: // SHR Vx {, Vy}
-                    if (C8.V[x] % 2 == 1) C8.V[0xF] = 1;
-                    else C8.V[0xF] = 0;
-                    C8.V[x] >>= 1;
+                    if (C8.V[y] % 2 == 1) tmp = 1;
+                    else tmp = 0;
+                    C8.V[x] = C8.V[y] >> 1;
+                    C8.V[0xF] = tmp;
                     break;
                 case 7: // SUBN Vx, Vy
-                    if (C8.V[y] > C8.V[x]) C8.V[0xF] = 1;
-                    else C8.V[0xF] = 0;
+                    if (C8.V[y] >= C8.V[x]) tmp = 1;
+                    else tmp = 0;
                     C8.V[x] = C8.V[y] - C8.V[x];
+                    C8.V[0xF] = tmp;
                     break;
                 case 0xE: // SHL Vx {, Vy}
-                    if (C8.V[x] >= 128) C8.V[0xF] = 1;
-                    else C8.V[0xF] = 0;
-                    C8.V[x] <<= 1;
+                    if (C8.V[y] >= 128) tmp = 1;
+                    else tmp = 0;
+                    C8.V[x] = C8.V[y] << 1;
+                    C8.V[0xF] = tmp;
                     break;
                 default:
-                    printf("Attempted to execute unknown instruction %04X", opcode);
+                    printf("Attempted to execute unknown instruction %04X\n", opcode);
                     exit(1);
-            }
+            }   
             break;
         case 0x9000: // SNE Vx, Vy
             if (C8.V[x] != C8.V[y]) C8.PC += 2;
@@ -294,6 +306,7 @@ void execute_instruction() {
             C8.V[x] = (rand() % 256) & kk;
             break;
         case 0xD000: // DRW Vx, Vy, nibble
+        // TODO: Fix some bug in here causing clipping test to fail
             // Draws sprites left to right, top to bottom
             uint8_t draw_buffer[16];
             memcpy(draw_buffer, &C8.memory[C8.I], nibble);
@@ -304,12 +317,7 @@ void execute_instruction() {
                     // If both the sprite bit and existing bit here are on (1), set VF to 1
                     if (*write_location == 1 && sprite_bit == 1) C8.V[0xF] = 1;
                     else C8.V[0xF] = 0;
-                    *write_location |= sprite_bit;
-                    // Sanity check TODO: Remove
-                    if (*write_location > 1 || sprite_bit > 1) {
-                        printf("A pixel value got set to something greater than 1\n");
-                        exit(1);
-                    }
+                    *write_location ^= sprite_bit;
                 }
             }
             break;
@@ -330,12 +338,15 @@ void execute_instruction() {
                     if (C8.keyboard[C8.V[x]] == 0) C8.PC += 2;
                     break;
                 default:
-                    printf("Attempted to execute unknown instruction %04X", opcode);
+                    printf("Attempted to execute unknown instruction %04X\n", opcode);
                     exit(1);
             }
             break;
         case 0xF000:
             switch (opcode & 0x00FF) {
+                case 0x07: // LD Vx, DT
+                    C8.V[x] = C8.delay_timer;
+                    break;
                 case 0x0A: // LD Vx, K
                     uint8_t key_pressed = 0;
                     for (int i = 0; i < 16; i++) {
@@ -418,18 +429,20 @@ void execute_instruction() {
                     C8.memory[C8.I+2] = C8.V[x] % 10;
                     break;
                 case 0x55: // LD [I], Vx
+                    // TODO: Consider adding toggle for code that increments I here as well
                     memcpy(&C8.memory[C8.I], C8.V, x + 1); // x = n -> copy n + 1 regs to mem
                     break;
                 case 0x65: // LD Vx, [I]
+                    // TODO: Consider adding toggle for code that increments I here as well
                     memcpy(C8.V, &C8.memory[C8.I], x + 1); // x = n -> copy mem into n + 1 regs
                     break;
                 default:
-                    printf("Attempted to execute unknown instruction %04X", opcode);
+                    printf("Attempted to execute unknown instruction %04X\n", opcode);
                     exit(1);
             }
             break;
         default:
-            printf("Attempted to execute unknown instruction %04X", opcode);
+            printf("Attempted to execute unknown instruction %04X\n", opcode);
             exit(1);
     }
 }
@@ -472,6 +485,69 @@ void render(SDL_Renderer* renderer) {
     SDL_Delay(16);
 }
 
+int map_sdl_to_chip8(SDL_Keycode key) {
+    // Maps keyboard as shown here: https://code.benco.io/chip8/web/
+    switch (key) {
+        case SDLK_1:
+            return 0x1;
+        case SDLK_2:
+            return 0x2;
+        case SDLK_3:
+            return 0x3;
+        case SDLK_4:
+            return 0xC;
+        case SDLK_q:
+            return 0x4;
+        case SDLK_w:
+            return 0x5;
+        case SDLK_e:
+            return 0x6;
+        case SDLK_r:
+            return 0xD;
+        case SDLK_a:
+            return 0x7;
+        case SDLK_s:
+            return 0x8;
+        case SDLK_d:
+            return 0x9;
+        case SDLK_f:
+            return 0xE;
+        case SDLK_z:
+            return 0xA;
+        case SDLK_x:
+            return 0x0;
+        case SDLK_c:
+            return 0xB;
+        case SDLK_v:
+            return 0xF;
+    }
+    return -1;
+}
+
+int poll_input() {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        int key_index;
+        switch (event.type) {
+            case SDL_QUIT:
+                return 1;
+            case SDL_KEYDOWN:
+                key_index = map_sdl_to_chip8(event.key.keysym.sym);
+                if (key_index == -1) continue; // key down on non-keypad key
+                C8.keyboard[key_index] = 1;
+                break;
+            case SDL_KEYUP:
+                key_index = map_sdl_to_chip8(event.key.keysym.sym);
+                if (key_index == -1) continue; // key up on non-keypad key
+                C8.keyboard[key_index] = 0;
+                break;
+            default:
+                break;
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) {
         printf("Usage: %s filename\n", argv[0]);
@@ -497,7 +573,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    SDL_Event event;
     SDL_Renderer *renderer;
     SDL_Window* window;
     SDL_CreateWindowAndRenderer(DISPLAY_WIDTH * SCALE_FACTOR, DISPLAY_HEIGHT * SCALE_FACTOR, 0, &window, &renderer);
@@ -521,11 +596,10 @@ int main(int argc, char** argv) {
         if (C8.delay_timer > 0) C8.delay_timer--;
         if (C8.sound_timer > 0) C8.sound_timer--;
 
+        if (poll_input()) running = 0; // quit event occurred 
+
         // Draw frame
         render(renderer);
-
-        // Check for window close action
-        if (SDL_PollEvent(&event) && event.type == SDL_QUIT) running = 0;
     }
 
     SDL_DestroyWindow(window);
