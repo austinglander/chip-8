@@ -2,19 +2,169 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <SDL2/SDL.h>
 
 #include <time.h>
 #define NANOS_PER_MILLI 1000000L
 
 // This interpreter was written primarily using Cowgod's reference
-// Several references are made to sections of Cowgod's document
+// Several references are made to sections of Cowgod's document throughout this program
 // You can find one mirror here: http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#2.1
 
 #define INSTRUCTIONS_PER_FRAME 10
 #define DISPLAY_WIDTH 64
 #define DISPLAY_HEIGHT 32
 
-typedef struct {
+// Static Sprites (2.4)
+#define SPRITE_0_OFFSET 0 // where in memory this sprite goes
+#define SPRITE_1_OFFSET 5
+#define SPRITE_2_OFFSET 10
+#define SPRITE_3_OFFSET 15
+#define SPRITE_4_OFFSET 20
+#define SPRITE_5_OFFSET 25
+#define SPRITE_6_OFFSET 30
+#define SPRITE_7_OFFSET 35
+#define SPRITE_8_OFFSET 40
+#define SPRITE_9_OFFSET 45
+#define SPRITE_A_OFFSET 50
+#define SPRITE_B_OFFSET 55
+#define SPRITE_C_OFFSET 60
+#define SPRITE_D_OFFSET 65
+#define SPRITE_E_OFFSET 70
+#define SPRITE_F_OFFSET 75
+
+const uint8_t SPRITE_0[5] = {
+    0b11110000,
+    0b10010000,
+    0b10010000,
+    0b10010000,
+    0b11110000
+};
+
+const uint8_t SPRITE_1[5] = {
+    0b00100000, 
+    0b01100000, 
+    0b00100000, 
+    0b00100000, 
+    0b01110000
+};
+
+const uint8_t SPRITE_2[5] = {
+    0b11110000,
+    0b00010000,
+    0b11110000,
+    0b10000000,
+    0b11110000
+};
+
+const uint8_t SPRITE_3[5] = {
+    0b11110000,
+    0b00010000,
+    0b11110000,
+    0b00010000,
+    0b11110000
+};
+
+const uint8_t SPRITE_4[5] = {
+    0b10010000,
+    0b10010000,
+    0b11110000,
+    0b00010000,
+    0b00010000
+};
+
+const uint8_t SPRITE_5[5] = {
+    0b11110000,
+    0b10000000,
+    0b11110000,
+    0b00010000,
+    0b11110000
+};
+
+const uint8_t SPRITE_6[5] = {
+    0b11110000,
+    0b10000000,
+    0b11110000,
+    0b10010000,
+    0b11110000
+};
+
+const uint8_t SPRITE_7[5] = {
+    0b11110000,
+    0b00010000,
+    0b00100000,
+    0b01000000,
+    0b01000000
+};
+
+const uint8_t SPRITE_8[5] = {
+    0b11110000,
+    0b10010000,
+    0b11110000,
+    0b10010000,
+    0b11110000
+};
+
+const uint8_t SPRITE_9[5] = {
+    0b11110000,
+    0b10010000,
+    0b11110000,
+    0b00010000,
+    0b11110000
+};
+
+const uint8_t SPRITE_A[5] = {
+    0b11110000,
+    0b10010000,
+    0b11110000,
+    0b10010000,
+    0b10010000
+};
+
+const uint8_t SPRITE_B[5] = {
+    0b11100000,
+    0b10010000,
+    0b11100000,
+    0b10010000,
+    0b11100000
+};
+
+const uint8_t SPRITE_C[5] = {
+    0b11110000,
+    0b10000000,
+    0b10000000,
+    0b10000000,
+    0b11110000
+};
+
+const uint8_t SPRITE_D[5] = {
+    0b11100000,
+    0b10010000,
+    0b10010000,
+    0b10010000,
+    0b11100000
+};
+
+const uint8_t SPRITE_E[5] = {
+    0b11110000,
+    0b10000000,
+    0b11110000,
+    0b10000000,
+    0b11110000
+};
+
+const uint8_t SPRITE_F[5] = {
+    0b11110000,
+    0b10000000,
+    0b11110000,
+    0b10000000,
+    0b10000000
+};
+
+
+
+typedef struct
+{
     uint8_t memory[4096]; // 2.1
     uint8_t V[16]; // 2.2
     uint16_t I;
@@ -208,13 +358,64 @@ void execute_instruction() {
                     C8.I += C8.V[x];
                     break;
                 case 0x29: // LD F, Vx
-                    // TODO
-                    C8.I = 0;
-                    printf("Running unimplemented Fx29 instruction\n");
+                    switch (C8.V[x]) {
+                        case 0:
+                            C8.I = SPRITE_0_OFFSET;
+                            break;
+                        case 1:
+                            C8.I = SPRITE_1_OFFSET;
+                            break;
+                        case 2:
+                            C8.I = SPRITE_2_OFFSET;
+                            break;
+                        case 3:
+                            C8.I = SPRITE_3_OFFSET;
+                            break;
+                        case 4:
+                            C8.I = SPRITE_4_OFFSET;
+                            break;
+                        case 5:
+                            C8.I = SPRITE_5_OFFSET;
+                            break;
+                        case 6:
+                            C8.I = SPRITE_6_OFFSET;
+                            break;
+                        case 7:
+                            C8.I = SPRITE_7_OFFSET;
+                            break;
+                        case 8:
+                            C8.I = SPRITE_8_OFFSET;
+                            break;
+                        case 9:
+                            C8.I = SPRITE_9_OFFSET;
+                            break;
+                        case 0xA:
+                            C8.I = SPRITE_A_OFFSET;
+                            break;
+                        case 0xB:
+                            C8.I = SPRITE_B_OFFSET;
+                            break;
+                        case 0xC:
+                            C8.I = SPRITE_C_OFFSET;
+                            break;
+                        case 0xD:
+                            C8.I = SPRITE_D_OFFSET;
+                            break;
+                        case 0xE:
+                            C8.I = SPRITE_E_OFFSET;
+                            break;
+                        case 0xF:
+                            C8.I = SPRITE_F_OFFSET;
+                            break;
+                        default:
+                            printf("Attempted to load nonexistent sprite for digit %X\n", C8.V[x]);
+                            exit(1);
+                    }
                     break;
                 case 0x33: // LD B, Vx
-                    // TODO
-                    printf("Running unimplemented Fx33 instruction\n");
+                    C8.memory[C8.I] = C8.V[x] / 100;
+                    C8.memory[C8.I+1] = (C8.V[x] % 100) / 10;
+                    C8.memory[C8.I+2] = C8.V[x] % 10;
                     break;
                 case 0x55: // LD [I], Vx
                     memcpy(&C8.memory[C8.I], C8.V, x + 1); // x = n -> copy n + 1 regs to mem
@@ -233,14 +434,31 @@ void execute_instruction() {
     }
 }
 
-void render() {
-    printf("Called render()\n\n");
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = 17 * NANOS_PER_MILLI;
-    nanosleep(&ts, NULL);
+// Loads sprite data for 0-F into the interpreter area of Chip-8 memory
+void load_static_sprites() {
+    memcpy(&C8.memory[SPRITE_0_OFFSET], SPRITE_0, 5);
+    memcpy(&C8.memory[SPRITE_1_OFFSET], SPRITE_1, 5);
+    memcpy(&C8.memory[SPRITE_2_OFFSET], SPRITE_2, 5);
+    memcpy(&C8.memory[SPRITE_3_OFFSET], SPRITE_3, 5);
+    memcpy(&C8.memory[SPRITE_4_OFFSET], SPRITE_4, 5);
+    memcpy(&C8.memory[SPRITE_5_OFFSET], SPRITE_5, 5);
+    memcpy(&C8.memory[SPRITE_6_OFFSET], SPRITE_6, 5);
+    memcpy(&C8.memory[SPRITE_7_OFFSET], SPRITE_7, 5);
+    memcpy(&C8.memory[SPRITE_8_OFFSET], SPRITE_8, 5);
+    memcpy(&C8.memory[SPRITE_9_OFFSET], SPRITE_9, 5);
+    memcpy(&C8.memory[SPRITE_A_OFFSET], SPRITE_A, 5);
+    memcpy(&C8.memory[SPRITE_B_OFFSET], SPRITE_B, 5);
+    memcpy(&C8.memory[SPRITE_C_OFFSET], SPRITE_C, 5);
+    memcpy(&C8.memory[SPRITE_D_OFFSET], SPRITE_D, 5);
+    memcpy(&C8.memory[SPRITE_E_OFFSET], SPRITE_E, 5);
+    memcpy(&C8.memory[SPRITE_F_OFFSET], SPRITE_F, 5);
 }
 
+void render(SDL_Window* window) {
+    SDL_Surface* screenSurface = SDL_GetWindowSurface(window);
+    SDL_FillRect(screenSurface, NULL, SDL_MapRGB(screenSurface->format, 0xFF, 0xFF, 0xFF ));
+    SDL_UpdateWindowSurface(window);
+}
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -248,8 +466,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Read sprites into memory
+    load_static_sprites();
+
     // Read program into memory
-    FILE* fptr;
+    FILE *fptr;
     fptr = fopen(argv[1], "rb");
     if (fptr == NULL) {
         printf("Unable to open file '%s'\n", argv[1]);
@@ -257,7 +478,25 @@ int main(int argc, char** argv) {
     }
     fread(&C8.memory[0x200], sizeof(uint8_t), sizeof(C8.memory) - 0x200, fptr);
     C8.PC = 0x200;
-    
+
+    // Init rendering engine
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
+        return 1;
+    }
+
+    SDL_Window* window = SDL_CreateWindow(
+        "CHIP-8 interpreter",
+        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+        64, 32,
+        SDL_WINDOW_SHOWN
+    );
+
+    if (window == NULL) {
+        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
+        SDL_Quit();
+        return 1;
+    }
 
     uint8_t running = 1;
     while (running) {
@@ -271,16 +510,11 @@ int main(int argc, char** argv) {
         if (C8.sound_timer > 0) C8.sound_timer--;
 
         // Draw frame
-        render();
+        render(window);
     }
 
-        // Update timers
-        // Render a frame from the memory buffer using SDL 2
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+
     return 0;
 }
-
-
-// Display
-// Load n bytes from memory location
-// I think I need to adjust my approach, 
-// as it's only clean implementationfor byte boundaries
