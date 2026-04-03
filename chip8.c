@@ -14,6 +14,7 @@
 #define INSTRUCTIONS_PER_FRAME 10
 #define DISPLAY_WIDTH 64
 #define DISPLAY_HEIGHT 32
+#define SCALE_FACTOR 16
 
 // Static Sprites (2.4)
 #define SPRITE_0_OFFSET 0 // where in memory this sprite goes
@@ -161,8 +162,6 @@ const uint8_t SPRITE_F[5] = {
     0b10000000
 };
 
-
-
 typedef struct
 {
     uint8_t memory[4096]; // 2.1
@@ -192,7 +191,7 @@ void execute_instruction() {
     uint8_t x = (opcode & 0x0F00) >> 8;
     uint8_t y = (opcode & 0x00F0) >> 4;
     uint8_t kk = opcode & 0x00FF;
-    printf("Executing instruction 0x%04X from location 0x%03X; nnn=0x%03X, nibble=%d, x=%d, y=%d, kk=%d\n", opcode, C8.PC, nnn, nibble, x, y, kk);
+    // printf("Executing instruction 0x%04X from location 0x%03X; nnn=0x%03X, nibble=%d, x=%d, y=%d, kk=%d\n", opcode, C8.PC, nnn, nibble, x, y, kk);
     C8.PC += 2;
 
     switch (opcode & 0xF000) { // switch over first nibble
@@ -261,6 +260,7 @@ void execute_instruction() {
                     if (C8.V[x] > C8.V[y]) C8.V[0xF] = 1; // TODO: understand why this is > and not >=
                     else C8.V[0xF] = 0;
                     C8.V[x] -= C8.V[y];
+                    break;
                 case 6: // SHR Vx {, Vy}
                     if (C8.V[x] % 2 == 1) C8.V[0xF] = 1;
                     else C8.V[0xF] = 0;
@@ -454,10 +454,22 @@ void load_static_sprites() {
     memcpy(&C8.memory[SPRITE_F_OFFSET], SPRITE_F, 5);
 }
 
-void render(SDL_Window* window) {
-    SDL_Surface* screenSurface = SDL_GetWindowSurface(window);
-    SDL_FillRect(screenSurface, NULL, SDL_MapRGB(screenSurface->format, 0xFF, 0xFF, 0xFF ));
-    SDL_UpdateWindowSurface(window);
+void render(SDL_Renderer* renderer) {
+    // Black background
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+    SDL_RenderClear(renderer);
+
+    // White foreground
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    for (int col = 0; col < DISPLAY_WIDTH * SCALE_FACTOR; col++) {
+        for (int row = 0; row < DISPLAY_HEIGHT * SCALE_FACTOR; row++) {
+            if (C8.display[col / SCALE_FACTOR][row / SCALE_FACTOR]) {
+                SDL_RenderDrawPoint(renderer, col, row);
+            }
+        }
+    }
+    SDL_RenderPresent(renderer);
+    SDL_Delay(16);
 }
 
 int main(int argc, char** argv) {
@@ -485,13 +497,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    SDL_Window* window = SDL_CreateWindow(
-        "CHIP-8 interpreter",
-        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-        64, 32,
-        SDL_WINDOW_SHOWN
-    );
-
+    SDL_Event event;
+    SDL_Renderer *renderer;
+    SDL_Window* window;
+    SDL_CreateWindowAndRenderer(DISPLAY_WIDTH * SCALE_FACTOR, DISPLAY_HEIGHT * SCALE_FACTOR, 0, &window, &renderer);
+    
     if (window == NULL) {
         printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
         SDL_Quit();
@@ -505,12 +515,17 @@ int main(int argc, char** argv) {
             execute_instruction();
         }
 
+        // TODO: play sound
+
         // Update timers (2.5)
         if (C8.delay_timer > 0) C8.delay_timer--;
         if (C8.sound_timer > 0) C8.sound_timer--;
 
         // Draw frame
-        render(window);
+        render(renderer);
+
+        // Check for window close action
+        if (SDL_PollEvent(&event) && event.type == SDL_QUIT) running = 0;
     }
 
     SDL_DestroyWindow(window);
